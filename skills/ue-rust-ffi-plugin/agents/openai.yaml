@@ -1,0 +1,4 @@
+interface:
+  display_name: "UE Rust FFI Plugin"
+  short_description: "Build UE plugins backed by Rust FFI libraries"
+  default_prompt: "Use $ue-rust-ffi-plugin to create a UE5 plugin that calls a Rust dynamic library on Windows and macOS."

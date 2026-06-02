@@ -4,6 +4,8 @@ Use this when wiring a Rust `cdylib` into a UE5 C++ plugin/module.
 
 ## Suggested Plugin Layout
 
+For Fab/Marketplace submissions, prefer `Source/ThirdParty/<Lib>` so the third-party artifacts live inside the plugin source tree and pass common review expectations. Use a root `ThirdParty/` folder only for projects that already standardize on that layout and are not constrained by store packaging rules.
+
 ```text
 Plugins/MyPlugin/
   MyPlugin.uplugin
@@ -14,18 +16,20 @@ Plugins/MyPlugin/
         MyRustBridge.h
       Private/
         MyRustBridge.cpp
-  ThirdParty/
-    UeMarkdownBridge/
-      include/
-        ue_markdown_bridge.h
-      bin/
-        Win64/
-          ue_markdown_bridge.dll
-      lib/
-        Win64/
-          ue_markdown_bridge.dll.lib
-        Mac/
-          libue_markdown_bridge.dylib
+    ThirdParty/
+      UeMarkdownBridge/
+        include/
+          ue_markdown_bridge.h
+        bin/
+          Win64/
+            ue_markdown_bridge.dll
+        lib/
+          Win64/
+            ue_markdown_bridge.dll.lib
+          Mac/
+            libue_markdown_bridge.dylib
+  Config/
+    FilterPlugin.ini
 ```
 
 ## Direct Linked Build.cs
@@ -55,7 +59,7 @@ public class MyPlugin : ModuleRules
         });
 
         string PluginRoot = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", ".."));
-        string ThirdParty = Path.Combine(PluginRoot, "ThirdParty", "UeMarkdownBridge");
+        string ThirdParty = Path.Combine(PluginRoot, "Source", "ThirdParty", "UeMarkdownBridge");
 
         PublicSystemIncludePaths.Add(Path.Combine(ThirdParty, "include"));
 
@@ -247,3 +251,42 @@ RuntimeDependencies.Add("$(PluginDir)/Binaries/Mac/libue_markdown_bridge.dylib",
 ```
 
 Also ensure the same files exist there during local editor development, since staging mainly affects build/package outputs.
+
+## Fab/Marketplace Packaging Notes
+
+Use this checklist before submitting a Rust FFI plugin to Fab or another Unreal store:
+
+- Keep bundled third-party artifacts under `Source/ThirdParty/<Lib>` unless the plugin already has an accepted convention.
+- Add `Config/FilterPlugin.ini` if root files such as `README.md` must be included in the packaged plugin zip:
+
+```ini
+[FilterPlugin]
+/README.md
+```
+
+- Validate the plugin with `RunUAT BuildPlugin` before zipping:
+
+```zsh
+RunUAT.sh BuildPlugin \
+  -Plugin="/path/to/Plugins/MyPlugin/MyPlugin.uplugin" \
+  -Package="/path/to/Saved/PackagedPlugins/MyPlugin" \
+  -TargetPlatforms=Mac+Win64 \
+  -StrictIncludes
+```
+
+- Zip the plugin root and exclude local/generated files:
+
+```zsh
+zip -r "/path/to/MyPlugin_fab.zip" MyPlugin \
+  -x 'MyPlugin/.git/*' 'MyPlugin/.git' \
+     'MyPlugin/.gitignore' \
+     'MyPlugin/Binaries/*' \
+     'MyPlugin/Intermediate/*' \
+     'MyPlugin/Saved/*' \
+     'MyPlugin/Content/*' \
+     '*/.DS_Store'
+```
+
+- Ensure `DocsURL`, `SupportURL`, documentation, and example project links point to public URLs.
+- In the publisher portal, select the product-page option equivalent to `THIS PRODUCT USES THIRD-PARTY SOFTWARE` whenever third-party native artifacts are bundled.
+- Complete the third-party software declaration form with upstream URL, license name/SPDX ID, a license copy, linkage type, bundled location, and data-transfer behavior.

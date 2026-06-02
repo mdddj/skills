@@ -1,6 +1,6 @@
 ---
 name: ue-rust-ffi-plugin
-description: Build or debug Unreal Engine 5 C++ plugins/modules that call Rust dynamic libraries through FFI. Use for UE Build.cs setup, cbindgen headers, Rust cdylib exports, extern "C" APIs, Windows Win64 DLL/import-library linking, macOS dylib loading, FPlatformProcess runtime loading, UTF-8 FString conversion, safe Rust-owned memory release, streaming callback bridges such as AI token-by-token responses, and Blueprint async action wrappers around Rust streams.
+description: Build, debug, package, or review Unreal Engine 5 C++ plugins/modules that call Rust dynamic libraries through FFI. Use for UE Build.cs setup, cbindgen headers, Rust cdylib exports, extern "C" APIs, Windows Win64 DLL/import-library linking, macOS dylib loading, FPlatformProcess runtime loading, UTF-8 FString conversion, safe Rust-owned memory release, streaming callback bridges such as AI token-by-token responses, Blueprint async action wrappers around Rust streams, Fab/Marketplace plugin packaging, third-party native library declarations, and TRC-style submission fixes.
 ---
 
 # UE Rust FFI Plugin
@@ -17,13 +17,16 @@ This workflow covers three distinct integration modes:
 
 Do not silently change the integration mode. If a user asked for direct linked mode, do not switch to a subprocess/worker architecture unless the user explicitly approves that architecture change.
 
+For Fab, Unreal Marketplace, or other store submissions, treat packaging, public documentation, and third-party license declarations as part of the integration work. Native DLLs/dylibs, import libraries, generated headers, and bundled ML runtimes are third-party files unless they are entirely authored by the publisher.
+
 ## Workflow
 
 1. Inspect the UE plugin layout first.
-   - Find `*.uplugin`, `Source/<Module>/<Module>.Build.cs`, `Public/`, `Private/`, `Binaries/<Platform>`, and `ThirdParty/<Lib>`.
+   - Find `*.uplugin`, `Source/<Module>/<Module>.Build.cs`, `Public/`, `Private/`, `Binaries/<Platform>`, `Source/ThirdParty/<Lib>`, legacy `ThirdParty/<Lib>`, and `Config/FilterPlugin.ini`.
    - Identify target platforms: usually `Mac`, `Win64`, or both.
    - Check whether Rust is a required startup dependency or optional runtime feature.
    - Check whether the code already uses direct calls, delay-load, or function pointers. Do not mix modes accidentally.
+   - For store submissions, check `DocsURL`, `SupportURL`, `EngineVersion`, `PlatformAllowList`, `CanContainContent`, `EnabledByDefault`, public example project links, and all bundled third-party license files.
 
 2. Choose the integration mode deliberately.
    - Use **direct linked mode** when loader behavior is simple and the library should be required at module load.
@@ -45,10 +48,11 @@ Do not silently change the integration mode. If a user asked for direct linked m
    - Include this header in UE under `THIRD_PARTY_INCLUDES_START/END`.
 
 5. Place artifacts predictably.
-   - Headers: `ThirdParty/<RustLib>/include`.
-   - Windows runtime DLLs: `ThirdParty/<RustLib>/bin/Win64`.
-   - Windows import libraries: `ThirdParty/<RustLib>/lib/Win64`.
-   - macOS dylibs: `ThirdParty/<RustLib>/lib/Mac`, and often copied to `Plugins/<Plugin>/Binaries/Mac` for editor runtime loading.
+   - Prefer `Source/ThirdParty/<RustLib>` for packaged plugins submitted to Fab/Marketplace. Use root `ThirdParty/<RustLib>` only when the project already follows that convention and the submission target allows it.
+   - Headers: `Source/ThirdParty/<RustLib>/include`.
+   - Windows runtime DLLs: `Source/ThirdParty/<RustLib>/bin/Win64`.
+   - Windows import libraries: `Source/ThirdParty/<RustLib>/lib/Win64`.
+   - macOS dylibs: `Source/ThirdParty/<RustLib>/lib/Mac`, and often copied to `Plugins/<Plugin>/Binaries/Mac` for editor runtime loading.
    - Do not rely on Cargo's `target/release` path at runtime.
 
 6. Update `Build.cs`.
@@ -84,6 +88,24 @@ Do not silently change the integration mode. If a user asked for direct linked m
    - Check architectures with `file` or `lipo -info`.
    - Build the UE target from a clean editor/project build.
    - Test both PIE and packaged/staged output when runtime dependencies changed.
+
+10. Prepare store submission packaging when relevant.
+   - Run `RunUAT BuildPlugin -Plugin=<Plugin>.uplugin -Package=<OutputDir> -TargetPlatforms=<Platforms> -StrictIncludes` for every platform you can validate.
+   - Zip the plugin root, not the whole example project, unless the store explicitly asks for an example project archive.
+   - Exclude generated/local folders from the store plugin zip: `.git`, `.gitignore`, `Binaries`, `Intermediate`, `Saved`, `.DS_Store`, and `Content` when `CanContainContent` is `false`.
+   - If the package should include root docs such as `README.md`, add `Config/FilterPlugin.ini` with `[FilterPlugin]` entries for those files.
+   - Ensure `.uplugin` metadata does not point to private repositories. `DocsURL`, `SupportURL`, and example project links must be public.
+   - Host example projects in a separate public repository or public download URL. Do not rely on a private plugin repository as the documentation link.
+   - Verify the final zip with `unzip -l`, confirm JSON validity with `python3 -m json.tool`, and scan for excluded folders or accidental root-level `ThirdParty` paths.
+
+11. Prepare third-party software declarations when relevant.
+   - If the plugin contains any third-party source, headers, DLLs, dylibs, import libraries, fonts, images, audio, models, or generated runtime artifacts, mark the product page/listing option equivalent to `THIS PRODUCT USES THIRD-PARTY SOFTWARE`.
+   - Fill the third-party software declaration form. The form is separate from code and `.uplugin` metadata.
+   - Count third-party sources by upstream owner/project, not by file count. A bundled Google AI Edge LiteRT/LiteRT-LM native stack can usually be one source if declared as one upstream package.
+   - Provide software name/version, upstream URL, license name/SPDX ID, and a license copy. Prefer a `.txt` copy of the upstream `LICENSE` file under the form size limit.
+   - In the usage description, state what the library does, why the plugin needs it, whether it is statically or dynamically linked, where it is bundled in the package, and whether it sends diagnostic, usage, prompt, output, or user data back to the upstream creator or plugin publisher.
+   - For permissive licenses such as Apache-2.0, MIT, and BSD, still preserve license/notice files and declare redistribution. Do not claim endorsement by the upstream owner.
+   - If a dependency is GPL, LGPL, EPL, MSPL, or otherwise restricted by the store rules, stop and resolve the licensing issue before submission.
 
 ## Platform Notes
 
@@ -148,6 +170,10 @@ Then preload dependent DLLs in `StartupModule` with `FPlatformProcess::GetDllHan
 
 ## Diagnostics
 
+- If Fab/TRC says third-party files are present but the product is not declared as using third-party software, fix the product listing checkbox/option in the publisher portal. This is not fixed in C++ code, README, or `.uplugin`.
+- If the third-party software declaration form passed but the product page still fails, verify that the listing itself has `THIS PRODUCT USES THIRD-PARTY SOFTWARE` selected.
+- If documentation fails review, check that all documentation and support links are public, not private GitHub repository URLs.
+- If an example project link fails review, use a public archive URL such as a GitHub `archive/refs/heads/main.zip` link or another direct public download.
 - If the editor hangs during startup after adding `PublicAdditionalLibraries` on Mac, inspect `otool -L` for hard-linked Rust/ML dylibs and consider manual loaded mode.
 - If runtime loading fails on Mac, log full dylib paths and inspect `dlerror()` where available.
 - If Windows works in editor but packaged builds fail, inspect staged DLL locations and `RuntimeDependencies`.
@@ -162,6 +188,9 @@ Then preload dependent DLLs in `StartupModule` with `FPlatformProcess::GetDllHan
 - Keep the Rust ABI smaller than the Rust implementation. Expose stable C functions and hide Rust crates/types behind opaque handles.
 - Prefer status codes plus out-pointers/callbacks for complex APIs.
 - Never let Rust-owned memory cross into UE without an explicit free function or immediate callback-copy contract.
+- Do not put Fab/Marketplace third-party declarations only in README or `.uplugin`; the publisher portal listing and declaration form must also be completed.
+- Do not ship a store package with private docs/support/example URLs.
+- Do not include generated build folders in the marketplace plugin zip unless the store submission specifically requires prebuilt binaries in that location.
 - Do not add a UE module as a dependency of itself.
 - Do not do model load/generation/free on the game thread.
 - Do not silently switch to a subprocess architecture. A worker process is a product/architecture decision, not an implementation detail.
